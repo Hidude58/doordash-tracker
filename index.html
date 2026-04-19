@@ -1,152 +1,113 @@
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <title>DoorDash Tracker Auto</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-
-  <style>
-    body { font-family: Arial; padding: 16px; background:#111; color:#fff; }
-    input, button { width:100%; padding:12px; margin:6px 0; border-radius:10px; border:none; }
-    button { background:#4CAF50; color:#fff; font-weight:bold; }
-    .card { background:#222; padding:14px; margin-top:12px; border-radius:12px; }
-  </style>
-</head>
-<body>
-
-<h2>🚗 Auto DoorDash Tracker</h2>
-
-<div class="card">
-  <h3>🚗 Auto Mileage (GPS)</h3>
-  <button onclick="startTrip()">Start Shift Tracking</button>
-  <button onclick="endTrip()">End Shift</button>
-  <p id="tripInfo"></p>
-</div>
-
-<div class="card">
-  <h3>⛽ Auto Gas Scan</h3>
-  <input type="file" accept="image/*" capture="environment" onchange="scanReceipt(event)">
-  <p id="ocrStatus"></p>
-</div>
-
-<div class="card">
-  <h3>Stats</h3>
-  <p id="stats"></p>
-</div>
-
-<div class="card">
-  <h3>History</h3>
-  <div id="history"></div>
-</div>
-
 <script>
-let shifts = JSON.parse(localStorage.getItem('shifts')) || [];
-let gas = JSON.parse(localStorage.getItem('gas')) || [];
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
-let tracking = false;
-let startLat = null, startLng = null;
-let distance = 0;
-let lastPos = null;
+// 🔥 PASTE YOUR FIREBASE CONFIG HERE
+const firebaseConfig = {
+  apiKey: "AIzaSyCsYz1dLbZVnmrql03LKLV7RFIFQl0I_F0",
+  authDomain: "mile-tracker-9dda0.firebaseapp.com",
+  projectId: "mile-tracker-9dda0",
+  storageBucket: "mile-tracker-9dda0.firebasestorage.app",
+  messagingSenderId: "358330569786",
+  appId: "1:358330569786:web:92aa672f9575d38daad103",
+  measurementId: "G-VYJ86JVBRM"
+};
 
-function save() {
-  localStorage.setItem('shifts', JSON.stringify(shifts));
-  localStorage.setItem('gas', JSON.stringify(gas));
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+// simple user id (no login yet)
+const userId = "defaultUser";
+
+let shifts = [];
+let gas = [];
+
+// LOAD DATA FROM CLOUD
+async function loadData() {
+  const ref = doc(db, "users", userId);
+  const snap = await getDoc(ref);
+
+  if (snap.exists()) {
+    const data = snap.data();
+    shifts = data.shifts || [];
+    gas = data.gas || [];
+  }
+
+  updateUI();
 }
 
-// ---------------- GPS MILEAGE ----------------
-function startTrip() {
-  tracking = true;
-  distance = 0;
-
-  navigator.geolocation.watchPosition(pos => {
-    if (!tracking) return;
-
-    let { latitude, longitude } = pos.coords;
-
-    if (lastPos) {
-      distance += getDistance(lastPos.lat, lastPos.lng, latitude, longitude);
-    }
-
-    lastPos = { lat: latitude, lng: longitude };
-
-    document.getElementById('tripInfo').innerText =
-      `Tracking... ${distance.toFixed(2)} miles`;
+// SAVE DATA TO CLOUD
+async function save() {
+  await setDoc(doc(db, "users", userId), {
+    shifts,
+    gas
   });
 }
 
-function endTrip() {
-  tracking = false;
+// SHIFT
+function saveShift() {
+  let start = parseFloat(startMiles.value);
+  let end = parseFloat(endMiles.value);
+  let earn = parseFloat(earnings.value);
 
-  let earn = prompt("Enter earnings:");
-  earn = parseFloat(earn);
+  if (isNaN(start) || isNaN(end) || isNaN(earn)) return alert("Fill all fields");
+  if (end < start) return alert("End must be higher");
 
-  if (!isNaN(earn)) {
-    shifts.push({ start: 0, end: distance, earn });
-    save();
-    updateUI();
-  }
+  shifts.push({ start, end, earn });
+  save();
+  updateUI();
+
+  startMiles.value = "";
+  endMiles.value = "";
+  earnings.value = "";
 }
 
-function getDistance(lat1, lon1, lat2, lon2) {
-  const R = 3958.8;
-  const dLat = (lat2 - lat1) * Math.PI/180;
-  const dLon = (lon2 - lon1) * Math.PI/180;
+// GAS
+function confirmGas() {
+  let g = parseFloat(gallonsInput.value);
+  let c = parseFloat(costInput.value);
 
-  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180) * Math.sin(dLon/2)**2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  if (isNaN(g) || isNaN(c)) return alert("Enter valid gas");
+
+  gas.push({ gallons: g, cost: c });
+  save();
+  updateUI();
+
+  gallonsInput.value = "";
+  costInput.value = "";
+  ocrStatus.innerText = "Saved ✔";
 }
 
-// ---------------- OCR GAS SCAN ----------------
-async function scanReceipt(event) {
-  let file = event.target.files[0];
-  if (!file) return;
-
-  document.getElementById('ocrStatus').innerText = "Reading receipt...";
-
-  const result = await Tesseract.recognize(file, 'eng');
-  let text = result.data.text;
-
-  let gallons = extractNumber(text, /([0-9]+\.?[0-9]*)\s*(gal|gallons)/i);
-  let cost = extractNumber(text, /\$([0-9]+\.?[0-9]*)/);
-
-  if (gallons && cost) {
-    gas.push({ gallons, cost });
-    save();
-    updateUI();
-    document.getElementById('ocrStatus').innerText = "Gas added automatically ✔";
-  } else {
-    document.getElementById('ocrStatus').innerText = "Could not read receipt clearly";
-  }
-}
-
-function extractNumber(text, regex) {
-  let match = text.match(regex);
-  return match ? parseFloat(match[1]) : null;
-}
-
-// ---------------- STATS ----------------
+// UI
 function updateUI() {
   let miles = shifts.reduce((a,s)=>a+(s.end-s.start),0);
   let gasCost = gas.reduce((a,g)=>a+g.cost,0);
   let cpp = miles ? gasCost/miles : 0;
 
-  document.getElementById('stats').innerText =
-    `Miles: ${miles.toFixed(2)} | Gas: $${gasCost.toFixed(2)} | $/mile: ${cpp.toFixed(2)}`;
+  stats.innerHTML = `
+    <div>Miles: ${miles.toFixed(1)}</div>
+    <div>Gas: $${gasCost.toFixed(2)}</div>
+    <div>$/mile: ${cpp.toFixed(2)}</div>
+  `;
 
   let html = "";
 
   shifts.forEach(s => {
-    let profit = s.earn - ((s.end-s.start)*cpp);
-    html += `Miles: ${(s.end-s.start).toFixed(2)} | Profit: $${profit.toFixed(2)}<hr>`;
+    let m = s.end - s.start;
+    let profit = s.earn - (m * cpp);
+
+    html += `
+      <div>
+        Miles: ${m.toFixed(1)}<br>
+        Earned: $${s.earn.toFixed(2)}<br>
+        Profit: $${profit.toFixed(2)}
+      </div><hr>
+    `;
   });
 
-  document.getElementById('history').innerHTML = html;
+  history.innerHTML = html;
 }
 
-updateUI();
+// LOAD on start
+loadData();
 </script>
-
-</body>
-</html>
