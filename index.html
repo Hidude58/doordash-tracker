@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>DoorDash Tracker</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body {
+      font-family: Arial;
+      padding: 20px;
+      background: #111;
+      color: white;
+    }
+    input, button {
+      width: 100%;
+      padding: 12px;
+      margin: 5px 0;
+      border-radius: 8px;
+      border: none;
+    }
+    button {
+      background: #4CAF50;
+      color: white;
+      font-weight: bold;
+    }
+    .card {
+      background: #222;
+      padding: 15px;
+      margin-top: 15px;
+      border-radius: 10px;
+    }
+  </style>
+</head>
+
+<body>
+
+<h2>🚗 DoorDash Tracker</h2>
+
+<div class="card">
+  <h3>New Shift</h3>
+  <input id="startMiles" placeholder="Start Miles">
+  <input id="endMiles" placeholder="End Miles">
+  <input id="earnings" placeholder="Earnings ($)">
+  <button onclick="saveShift()">Save Shift</button>
+</div>
+
+<div class="card">
+  <h3>Add Gas</h3>
+  <input id="gallons" placeholder="Gallons">
+  <input id="cost" placeholder="Total Cost ($)">
+  <button onclick="saveGas()">Save Gas</button>
+</div>
+
+<div class="card">
+  <h3>Stats</h3>
+  <p id="stats"></p>
+</div>
+
+<div class="card">
+  <h3>History</h3>
+  <div id="history"></div>
+</div>
+
+<script>
+let shifts = JSON.parse(localStorage.getItem("shifts")) || [];
+let gas = JSON.parse(localStorage.getItem("gas")) || [];
+
+function saveData() {
+  localStorage.setItem("shifts", JSON.stringify(shifts));
+  localStorage.setItem("gas", JSON.stringify(gas));
+}
+
+function saveShift() {
+  let start = parseFloat(document.getElementById("startMiles").value);
+  let end = parseFloat(document.getElementById("endMiles").value);
+  let earn = parseFloat(document.getElementById("earnings").value);
+
+  if (!start || !end || !earn) return;
+
+  shifts.push({ start, end, earn });
+  saveData();
+  updateUI();
+}
+
+function saveGas() {
+  let gallons = parseFloat(document.getElementById("gallons").value);
+  let cost = parseFloat(document.getElementById("cost").value);
+
+  if (!gallons || !cost) return;
+
+  gas.push({ gallons, cost });
+  saveData();
+  updateUI();
+}
+
+function updateUI() {
+  let totalMiles = shifts.reduce((sum, s) => sum + (s.end - s.start), 0);
+  let totalGas = gas.reduce((sum, g) => sum + g.cost, 0);
+  let costPerMile = totalMiles ? totalGas / totalMiles : 0;
+
+  document.getElementById("stats").innerText =
+    `Miles: ${totalMiles.toFixed(1)} | Gas: $${totalGas.toFixed(2)} | $/mile: ${costPerMile.toFixed(2)}`;
+
+  let historyHTML = "";
+
+  shifts.forEach(s => {
+    let miles = s.end - s.start;
+    let cost = miles * costPerMile;
+    let profit = s.earn - cost;
+
+    historyHTML += `
+      <div style="margin-top:10px;">
+        Miles: ${miles.toFixed(1)}<br>
+        Earned: $${s.earn.toFixed(2)}<br>
+        Profit: <span style="color:${profit >= 0 ? 'lime' : 'red'}">$${profit.toFixed(2)}</span>
+      </div>
+      <hr>
+    `;
+  });
+
+  document.getElementById("history").innerHTML = historyHTML;
+}
+
+updateUI();
+</script>
+
+</body>
+</html>
