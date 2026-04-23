@@ -5,8 +5,6 @@
   <title>DriveLedger</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-
   <style>
     body {
       margin: 0;
@@ -15,10 +13,7 @@
       color: #e2e8f0;
     }
 
-    h2 {
-      text-align: center;
-      margin: 20px 0;
-    }
+    h2 { text-align: center; margin: 20px 0; }
 
     .container {
       padding: 16px;
@@ -33,7 +28,7 @@
       margin-bottom: 16px;
     }
 
-    input {
+    input, select {
       width: 100%;
       padding: 12px;
       margin-top: 8px;
@@ -75,12 +70,6 @@
       display: none;
       margin-top: 10px;
     }
-
-    hr {
-      border: none;
-      border-top: 1px solid #334155;
-      margin: 10px 0;
-    }
   </style>
 </head>
 
@@ -96,6 +85,16 @@
     <input id="endMiles" placeholder="End Odometer">
     <input id="earnings" placeholder="Earnings ($)">
     <button onclick="saveShift()">Save Shift</button>
+  </div>
+
+  <div class="card">
+    <h3>Sort</h3>
+    <select id="sortType" onchange="updateUI()">
+      <option value="new">Newest</option>
+      <option value="old">Oldest</option>
+      <option value="earn">Highest $</option>
+      <option value="miles">Most Miles</option>
+    </select>
   </div>
 
   <div class="card">
@@ -117,7 +116,7 @@ function save() {
   localStorage.setItem('shifts', JSON.stringify(shifts));
 }
 
-// SAVE
+// SAVE SHIFT (WITH ID)
 function saveShift() {
   let start = parseFloat(startMiles.value);
   let end = parseFloat(endMiles.value);
@@ -126,7 +125,14 @@ function saveShift() {
   if (isNaN(start) || isNaN(end) || isNaN(earn)) return alert("Fill all fields");
   if (end <= start) return alert("End must be higher");
 
-  shifts.push({ start, end, earn });
+  shifts.push({
+    id: Date.now(),
+    start,
+    end,
+    earn,
+    time: Date.now()
+  });
+
   save();
   updateUI();
 
@@ -135,44 +141,55 @@ function saveShift() {
   earnings.value = "";
 }
 
-// DELETE
-function deleteShift(index) {
-  if (!confirm("Delete this shift?")) return;
-  shifts.splice(index, 1);
+// DELETE (BY ID)
+function deleteShift(id) {
+  if (!confirm("Delete shift?")) return;
+  shifts = shifts.filter(s => s.id !== id);
   save();
   updateUI();
 }
 
-// EDIT
-function editShift(index) {
-  let s = shifts[index];
+// EDIT (BY ID)
+function editShift(id) {
+  let s = shifts.find(x => x.id === id);
 
-  let start = prompt("Start miles:", s.start);
-  let end = prompt("End miles:", s.end);
-  let earn = prompt("Earnings:", s.earn);
+  let start = parseFloat(prompt("Start miles:", s.start));
+  let end = parseFloat(prompt("End miles:", s.end));
+  let earn = parseFloat(prompt("Earnings:", s.earn));
 
-  start = parseFloat(start);
-  end = parseFloat(end);
-  earn = parseFloat(earn);
+  if (isNaN(start) || isNaN(end) || isNaN(earn)) return alert("Invalid input");
 
-  if (isNaN(start) || isNaN(end) || isNaN(earn)) {
-    alert("Invalid input");
-    return;
-  }
+  s.start = start;
+  s.end = end;
+  s.earn = earn;
 
-  shifts[index] = { start, end, earn };
   save();
   updateUI();
 }
 
-// TOGGLE DROPDOWN
+// TOGGLE
 function toggleDetails(id) {
   let el = document.getElementById(id);
   el.style.display = el.style.display === "none" ? "block" : "none";
 }
 
+// SORT
+function getSortedShifts() {
+  let type = document.getElementById("sortType").value;
+  let arr = [...shifts];
+
+  if (type === "new") arr.sort((a,b)=>b.time-a.time);
+  if (type === "old") arr.sort((a,b)=>a.time-b.time);
+  if (type === "earn") arr.sort((a,b)=>b.earn-a.earn);
+  if (type === "miles") arr.sort((a,b)=>(b.end-b.start)-(a.end-a.start));
+
+  return arr;
+}
+
 // UI
 function updateUI() {
+  let sorted = getSortedShifts();
+
   let totalMiles = shifts.reduce((a,s)=>a+(s.end-s.start),0);
   let totalEarn = shifts.reduce((a,s)=>a+s.earn,0);
   let earnPerMile = totalMiles ? totalEarn / totalMiles : 0;
@@ -183,28 +200,28 @@ function updateUI() {
     $/mile: $${earnPerMile.toFixed(2)}
   `;
 
-  if (shifts.length === 0) {
+  if (sorted.length === 0) {
     history.innerHTML = "No shifts yet";
     return;
   }
 
-  history.innerHTML = shifts.map((s, i) => {
+  history.innerHTML = sorted.map((s, i) => {
     let miles = s.end - s.start;
     let earnPM = miles ? s.earn / miles : 0;
 
     return `
       <div class="shift">
         <div class="shift-header" onclick="toggleDetails('d${i}')">
-          <span>Shift ${i+1}</span>
           <span>$${s.earn.toFixed(2)}</span>
+          <span>${miles.toFixed(1)} mi</span>
         </div>
 
         <div class="shift-details" id="d${i}">
           Miles: ${miles.toFixed(1)}<br>
           $/mile: $${earnPM.toFixed(2)}<br>
 
-          <button class="edit" onclick="editShift(${i})">Edit</button>
-          <button class="danger" onclick="deleteShift(${i})">Delete</button>
+          <button class="edit" onclick="editShift(${s.id})">Edit</button>
+          <button class="danger" onclick="deleteShift(${s.id})">Delete</button>
         </div>
       </div>
     `;
